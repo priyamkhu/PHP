@@ -1,26 +1,24 @@
 <?php
-ini_set('display_errors', 1); // Development only
-ini_set('display_startup_errors', 1);
-error_reporting(E_ALL);
+header("Access-Control-Allow-Origin: *"); // Allow all origins (for development)
+header("Content-Type: application/json"); // JSON response
 
-$host = "hopper.proxy.rlwy.net";
-$port = 26459;
-$dbname = "railway";
-$user = "root";
-$pass = "nSGAVaoqepMDEZqkJPKMBZSEfGDyNvVq";
+$host = "hopper.proxy.rlwy.net";   // Railway proxy host
+$port = 26459;                     // Railway public port
+$dbname = "railway";              // Your database name
+$user = "root";                   // Your username
+$pass = "nSGAVaoqepMDEZqkJPKMBZSEfGDyNvVq";  // Your DB password
 
 $conn = new mysqli($host, $user, $pass, $dbname, $port);
 
+// Check connection
 if ($conn->connect_error) {
-  die("Connection failed: " . $conn->connect_error);
+  echo json_encode(["status" => "error", "message" => "Database connection failed."]);
+  exit();
 }
 
-if (!isset($_POST['username'], $_POST['password'])) {
-    die("❌ Missing username or password.");
-}
-
-$username = trim($_POST['username']);
-$password = trim($_POST['password']);
+// Receive input from Flutter
+$username = $_POST['username'] ?? '';
+$password = $_POST['password'] ?? '';
 
 $stmt = $conn->prepare("SELECT password FROM Users WHERE username = ?");
 $stmt->bind_param("s", $username);
@@ -30,13 +28,14 @@ $stmt->store_result();
 if ($stmt->num_rows > 0) {
   $stmt->bind_result($hashed_password);
   $stmt->fetch();
+
   if (password_verify($password, $hashed_password)) {
-    echo "✅ Login successful!";
+    echo json_encode(["status" => "success"]);
   } else {
-    echo "❌ Incorrect password.";
+    echo json_encode(["status" => "error", "message" => "Incorrect password."]);
   }
 } else {
-  echo "❌ User not found.";
+  echo json_encode(["status" => "error", "message" => "User not found."]);
 }
 
 $stmt->close();
