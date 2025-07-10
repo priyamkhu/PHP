@@ -1,9 +1,13 @@
 <?php
-$host = "hopper.proxy.rlwy.net";   // Railway proxy host
-$port = 26459;                     // Railway public port
-$dbname = "railway";              // Your database name
-$user = "root";                   // Your username
-$pass = "nSGAVaoqepMDEZqkJPKMBZSEfGDyNvVq";     // Your Railway DB password
+ini_set('display_errors', 1); // Development only
+ini_set('display_startup_errors', 1);
+error_reporting(E_ALL);
+
+$host = "hopper.proxy.rlwy.net";
+$port = 26459;
+$dbname = "railway";
+$user = "root";
+$pass = "nSGAVaoqepMDEZqkJPKMBZSEfGDyNvVq";
 
 $conn = new mysqli($host, $user, $pass, $dbname, $port);
 
@@ -11,9 +15,12 @@ if ($conn->connect_error) {
   die("Connection failed: " . $conn->connect_error);
 }
 
-// Example login check
-$username = $_POST['username'];
-$password = $_POST['password'];
+if (!isset($_POST['username'], $_POST['password'])) {
+    die("❌ Missing username or password.");
+}
+
+$username = trim($_POST['username']);
+$password = trim($_POST['password']);
 
 $stmt = $conn->prepare("SELECT password FROM Users WHERE username = ?");
 $stmt->bind_param("s", $username);
@@ -31,6 +38,7 @@ if ($stmt->num_rows > 0) {
 } else {
   echo "❌ User not found.";
 }
+
 $stmt->close();
 $conn->close();
 ?>
