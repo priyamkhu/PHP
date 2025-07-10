@@ -18,35 +18,27 @@
 
 FROM php:8.1-cli
 
-# Install necessary PHP extensions and system dependencies
+# Install system dependencies required for PHP extensions
 RUN apt-get update && apt-get install -y \
-    libzip-dev \
     unzip \
+    libzip-dev \
     libssl-dev \
     libcurl4-openssl-dev \
+    libonig-dev \         # <-- ADD THIS LINE
     zlib1g-dev \
-    && docker-php-ext-install mysqli \
-    && docker-php-ext-install mbstring \
-    && docker-php-ext-install sockets \
-    && docker-php-ext-install curl \
-    && docker-php-ext-install openssl
+    && docker-php-ext-install mysqli mbstring sockets curl
 
 # Install Composer
 COPY --from=composer:latest /usr/bin/composer /usr/bin/composer
 
 WORKDIR /var/www/html
 
-# Copy all files into container
+# Copy source code
 COPY . .
 
-# Install PHPMailer and other dependencies
+# Install PHP dependencies like PHPMailer
 RUN composer install
 
-# Expose desired port (for PHP built-in server)
 EXPOSE 10000
-
-# Start PHP built-in web server
-CMD ["php", "-S", "0.0.0.0:10000"]
-
 
 CMD ["php", "-S", "0.0.0.0:10000"]
