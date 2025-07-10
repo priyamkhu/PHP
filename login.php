@@ -1,9 +1,13 @@
 <?php
+// Enable all errors for debugging (disable in production)
+error_reporting(E_ALL);
+ini_set('display_errors', 1);
+
 header("Access-Control-Allow-Origin: *");
 header("Content-Type: application/json");
 date_default_timezone_set("Asia/Kolkata");
 
-// DB Connection
+// Database connection
 $host = "hopper.proxy.rlwy.net";
 $port = 26459;
 $dbname = "railway";
@@ -12,11 +16,11 @@ $pass = "nSGAVaoqepMDEZqkJPKMBZSEfGDyNvVq";
 $conn = new mysqli($host, $user, $pass, $dbname, $port);
 
 if ($conn->connect_error) {
-    echo json_encode(["status" => "error", "message" => "Database connection failed."]);
+    echo json_encode(["status" => "error", "message" => "❌ Database connection failed"]);
     exit();
 }
 
-// Load PHPMailer
+// Include PHPMailer
 use PHPMailer\PHPMailer\PHPMailer;
 use PHPMailer\PHPMailer\Exception;
 require 'vendor/autoload.php';
@@ -28,12 +32,12 @@ function sendOTPEmail($to, $otp) {
         $mail->isSMTP();
         $mail->Host = 'smtp.gmail.com';
         $mail->SMTPAuth = true;
-        $mail->Username = 'kumarhumepipe.help@gmail.com'; // YOUR EMAIL
-        $mail->Password = 'szvpcbpkmsxtmxky'; // APP PASSWORD
+        $mail->Username = 'kumarhumepipe.help@gmail.com';
+        $mail->Password = 'szvpcbpkmsxtmxky';
         $mail->SMTPSecure = 'tls';
         $mail->Port = 587;
 
-        $mail->setFrom('your@gmail.com', 'Your App');
+        $mail->setFrom('kumarhumepipe.help@gmail.com', 'Kumar Hume Pipe');
         $mail->addAddress($to);
         $mail->Subject = 'Your OTP Code';
         $mail->Body = "Your OTP is: $otp. It is valid for 5 minutes.";
@@ -46,31 +50,30 @@ function sendOTPEmail($to, $otp) {
 }
 
 // Inputs
-$username = $_POST['username'] ?? '';
-$password = $_POST['password'] ?? '';
+$username    = $_POST['username'] ?? '';
+$password    = $_POST['password'] ?? '';
 $newPassword = $_POST['new_password'] ?? '';
-$email = $_POST['email'] ?? '';
-$otp = $_POST['otp'] ?? '';
+$email       = $_POST['email'] ?? '';
+$otp         = $_POST['otp'] ?? '';
 
-// STEP 1: Username exists check
-if (!empty($username) && empty($email) && empty($password) && empty($newPassword) && empty($otp)) {
+// === STEP 1: Verify username exists ===
+if (!empty($username) && empty($password) && empty($newPassword) && empty($email) && empty($otp)) {
     $stmt = $conn->prepare("SELECT id FROM Users WHERE username = ?");
     $stmt->bind_param("s", $username);
     $stmt->execute();
     $stmt->store_result();
 
-    if ($stmt->num_rows > 0) {
-        echo json_encode(["status" => "exists", "message" => "User exists."]);
-    } else {
-        echo json_encode(["status" => "not_found", "message" => "❌ User not found."]);
-    }
+    echo json_encode([
+        "status" => $stmt->num_rows > 0 ? "exists" : "not_found",
+        "message" => $stmt->num_rows > 0 ? "✅ User exists" : "❌ User not found"
+    ]);
 
     $stmt->close();
     $conn->close();
     exit();
 }
 
-// STEP 2: Email check & send OTP
+// === STEP 2: Send OTP ===
 if (!empty($username) && !empty($email) && empty($password) && empty($newPassword) && empty($otp)) {
     $stmt = $conn->prepare("SELECT id FROM Users WHERE username = ? AND email = ?");
     $stmt->bind_param("ss", $username, $email);
@@ -82,11 +85,9 @@ if (!empty($username) && !empty($email) && empty($password) && empty($newPasswor
         exit();
     }
 
-    // Generate OTP
+    // Generate and save OTP
     $otpCode = rand(100000, 999999);
-    $expiresAt = date("Y-m-d H:i:s", time() + 300); // 5 mins
-
-    // Invalidate previous OTPs
+    $expiresAt = date("Y-m-d H:i:s", time() + 300); // valid for 5 minutes
     $conn->query("UPDATE otp_codes SET is_used = 1 WHERE username = '$username'");
 
     $stmt2 = $conn->prepare("INSERT INTO otp_codes (username, email, otp_code, expires_at) VALUES (?, ?, ?, ?)");
@@ -105,8 +106,8 @@ if (!empty($username) && !empty($email) && empty($password) && empty($newPasswor
     exit();
 }
 
-// STEP 3: Verify OTP
-if (!empty($username) && !empty($otp)) {
+// === STEP 3: Verify OTP ===
+if (!empty($username) && !empty($otp) && empty($newPassword)) {
     $now = date("Y-m-d H:i:s");
     $stmt = $conn->prepare("SELECT id FROM otp_codes WHERE username = ? AND otp_code = ? AND is_used = 0 AND expires_at > ?");
     $stmt->bind_param("sss", $username, $otp, $now);
@@ -114,7 +115,6 @@ if (!empty($username) && !empty($otp)) {
     $stmt->store_result();
 
     if ($stmt->num_rows > 0) {
-        // Mark OTP used
         $conn->query("UPDATE otp_codes SET is_used = 1 WHERE username = '$username'");
         echo json_encode(["status" => "otp_valid", "message" => "✅ OTP verified"]);
     } else {
@@ -126,12 +126,12 @@ if (!empty($username) && !empty($otp)) {
     exit();
 }
 
-// STEP 4: Reset Password
+// === STEP 4: Reset Password ===
 if (!empty($username) && !empty($newPassword)) {
     $hashed = password_hash($newPassword, PASSWORD_DEFAULT);
-
     $stmt = $conn->prepare("UPDATE Users SET password = ? WHERE username = ?");
     $stmt->bind_param("ss", $hashed, $username);
+
     if ($stmt->execute()) {
         echo json_encode(["status" => "success", "message" => "✅ Password updated"]);
     } else {
@@ -143,7 +143,7 @@ if (!empty($username) && !empty($newPassword)) {
     exit();
 }
 
-// STEP 5: Login
+// === STEP 5: Login ===
 if (!empty($username) && !empty($password)) {
     $stmt = $conn->prepare("SELECT password FROM Users WHERE username = ?");
     $stmt->bind_param("s", $username);
@@ -157,10 +157,10 @@ if (!empty($username) && !empty($password)) {
         if (password_verify($password, $hashed_password)) {
             echo json_encode(["status" => "success"]);
         } else {
-            echo json_encode(["status" => "error", "message" => "Incorrect password"]);
+            echo json_encode(["status" => "error", "message" => "❌ Incorrect password"]);
         }
     } else {
-        echo json_encode(["status" => "error", "message" => "User not found"]);
+        echo json_encode(["status" => "error", "message" => "❌ User not found"]);
     }
 
     $stmt->close();
@@ -168,7 +168,7 @@ if (!empty($username) && !empty($password)) {
     exit();
 }
 
-// Invalid fallback
-echo json_encode(["status" => "error", "message" => "Invalid request"]);
+// Default error if nothing matched
+echo json_encode(["status" => "error", "message" => "❌ Invalid request"]);
 $conn->close();
 ?>
