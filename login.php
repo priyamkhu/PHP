@@ -7,11 +7,16 @@ require 'vendor/autoload.php';
 header("Access-Control-Allow-Origin: *");
 header("Content-Type: application/json");
 
+// Database config
 $host = "hopper.proxy.rlwy.net";
 $port = 26459;
 $dbname = "railway";
 $user = "root";
 $pass = "nSGAVaoqepMDEZqkJPKMBZSEfGDyNvVq";
+
+// Gmail config
+$emailUser = "kumarhumepipe.help@gmail.com";
+$emailPass = "szvpcbpkmsxtmxky";
 
 $conn = new mysqli($host, $user, $pass, $dbname, $port);
 if ($conn->connect_error) {
@@ -19,13 +24,13 @@ if ($conn->connect_error) {
     exit();
 }
 
-$username = $_POST['username'] ?? '';
-$password = $_POST['password'] ?? '';
-$newPassword = $_POST['new_password'] ?? '';
-$email = $_POST['email'] ?? '';
-$otp = $_POST['otp'] ?? '';
+$username     = $_POST['username'] ?? '';
+$password     = $_POST['password'] ?? '';
+$newPassword  = $_POST['new_password'] ?? '';
+$email        = $_POST['email'] ?? '';
+$otp          = $_POST['otp'] ?? '';
 
-// === Step 1: Check if username exists & send OTP ===
+// === Step 1: Request OTP ===
 if (!empty($username) && !empty($email) && empty($otp) && empty($newPassword)) {
     $stmt = $conn->prepare("SELECT id FROM Users WHERE username = ? AND email = ?");
     $stmt->bind_param("ss", $username, $email);
@@ -38,21 +43,21 @@ if (!empty($username) && !empty($email) && empty($otp) && empty($newPassword)) {
         $stmt->bind_param("ss", $generatedOtp, $username);
         $stmt->execute();
 
-        // Send email using PHPMailer
+        // Send OTP email
         $mail = new PHPMailer(true);
         try {
             $mail->isSMTP();
-            $mail->Host = 'smtp.gmail.com';
-            $mail->SMTPAuth = true;
-            $mail->Username = getenv('EMAIL_USER');
-            $mail->Password = getenv('EMAIL_PASS');
+            $mail->Host       = 'smtp.gmail.com';
+            $mail->SMTPAuth   = true;
+            $mail->Username   = $emailUser;
+            $mail->Password   = $emailPass;
             $mail->SMTPSecure = PHPMailer::ENCRYPTION_STARTTLS;
-            $mail->Port = 587;
+            $mail->Port       = 587;
 
-            $mail->setFrom(getenv('EMAIL_USER'), 'OTP Verification');
-            $mail->addAddress($email);
+            $mail->setFrom($emailUser, 'MyApp Support');
+            $mail->addAddress($email, $username);
             $mail->Subject = 'Your OTP Code';
-            $mail->Body = "Hello $username,\nYour OTP code is: $generatedOtp";
+            $mail->Body    = "Hello $username,\n\nYour OTP code is: $generatedOtp\n\nRegards,\nMyApp Team";
 
             $mail->send();
             echo json_encode(["status" => "otp_sent", "message" => "OTP sent to email."]);
