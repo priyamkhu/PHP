@@ -18,13 +18,13 @@
 
 FROM php:8.1-cli
 
-# Install system dependencies required for PHP extensions
+# Install system dependencies and PHP extensions
 RUN apt-get update && apt-get install -y \
     unzip \
     libzip-dev \
     libssl-dev \
     libcurl4-openssl-dev \
-    libonig-dev \         # <-- ADD THIS LINE
+    libonig-dev \
     zlib1g-dev \
     && docker-php-ext-install mysqli mbstring sockets curl
 
@@ -33,10 +33,10 @@ COPY --from=composer:latest /usr/bin/composer /usr/bin/composer
 
 WORKDIR /var/www/html
 
-# Copy source code
+# Copy all project files
 COPY . .
 
-# Install PHP dependencies like PHPMailer
+# Install PHP dependencies (e.g. PHPMailer)
 RUN composer install
 
 EXPOSE 10000
