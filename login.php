@@ -1,7 +1,11 @@
 <?php
+use PHPMailer\PHPMailer\PHPMailer;
+use PHPMailer\PHPMailer\Exception;
+
+require 'vendor/autoload.php';
+
 header("Access-Control-Allow-Origin: *");
 header("Content-Type: application/json");
-error_reporting(0);
 
 $host = "hopper.proxy.rlwy.net";
 $port = 26459;
@@ -15,119 +19,94 @@ if ($conn->connect_error) {
     exit();
 }
 
-// 🔁 Get request data
-$step = $_POST['step'] ?? '';
 $username = $_POST['username'] ?? '';
 $password = $_POST['password'] ?? '';
 $newPassword = $_POST['new_password'] ?? '';
-$otp = $_POST['otp'] ?? '';
-$sentOtp = $_POST['sent_otp'] ?? '';
 $email = $_POST['email'] ?? '';
+$otp = $_POST['otp'] ?? '';
 
-// ✅ STEP 0: Register New User
-if ($step == "register" && !empty($username) && !empty($password) && !empty($email)) {
-    // Check if user exists
-    $check = $conn->prepare("SELECT id FROM Users WHERE username = ?");
-    $check->bind_param("s", $username);
-    $check->execute();
-    $check->store_result();
-
-    if ($check->num_rows > 0) {
-        echo json_encode(["status" => "exists", "message" => "Username already taken."]);
-        $check->close();
-        $conn->close();
-        exit();
-    }
-    $check->close();
-
-    // Hash password and insert user
-    $hashed = password_hash($password, PASSWORD_DEFAULT);
-    $stmt = $conn->prepare("INSERT INTO Users (username, password, email) VALUES (?, ?, ?)");
-    $stmt->bind_param("sss", $username, $hashed, $email);
-
-    if ($stmt->execute()) {
-        echo json_encode(["status" => "success", "message" => "✅ User registered successfully."]);
-    } else {
-        echo json_encode(["status" => "error", "message" => "❌ Failed to register user."]);
-    }
-
-    $stmt->close();
-    $conn->close();
-    exit();
-}
-
-// ✅ STEP 1: Check if user exists
-if ($step == "check_user" && !empty($username)) {
-    $stmt = $conn->prepare("SELECT email FROM Users WHERE username = ?");
-    $stmt->bind_param("s", $username);
+// === Step 1: Check if username exists & send OTP ===
+if (!empty($username) && !empty($email) && empty($otp) && empty($newPassword)) {
+    $stmt = $conn->prepare("SELECT id FROM Users WHERE username = ? AND email = ?");
+    $stmt->bind_param("ss", $username, $email);
     $stmt->execute();
     $stmt->store_result();
 
     if ($stmt->num_rows > 0) {
-        $stmt->bind_result($email_found);
-        $stmt->fetch();
-        echo json_encode(["status" => "exists", "message" => "User found.", "email" => $email_found]);
-    } else {
-        echo json_encode(["status" => "not_found", "message" => "User not found."]);
-    }
+        $generatedOtp = rand(100000, 999999);
+        $stmt = $conn->prepare("UPDATE Users SET otp = ? WHERE username = ?");
+        $stmt->bind_param("ss", $generatedOtp, $username);
+        $stmt->execute();
 
-    $stmt->close();
-    $conn->close();
+        // Send email using PHPMailer
+        $mail = new PHPMailer(true);
+        try {
+            $mail->isSMTP();
+            $mail->Host = 'smtp.gmail.com';
+            $mail->SMTPAuth = true;
+            $mail->Username = getenv('EMAIL_USER');
+            $mail->Password = getenv('EMAIL_PASS');
+            $mail->SMTPSecure = PHPMailer::ENCRYPTION_STARTTLS;
+            $mail->Port = 587;
+
+            $mail->setFrom(getenv('EMAIL_USER'), 'OTP Verification');
+            $mail->addAddress($email);
+            $mail->Subject = 'Your OTP Code';
+            $mail->Body = "Hello $username,\nYour OTP code is: $generatedOtp";
+
+            $mail->send();
+            echo json_encode(["status" => "otp_sent", "message" => "OTP sent to email."]);
+        } catch (Exception $e) {
+            echo json_encode(["status" => "error", "message" => "Mail error: {$mail->ErrorInfo}"]);
+        }
+    } else {
+        echo json_encode(["status" => "not_found", "message" => "Username/email not found."]);
+    }
     exit();
 }
 
-// ✅ STEP 2: Verify OTP
-if ($step == "verify_otp" && !empty($otp) && !empty($sentOtp)) {
-    if ($otp === $sentOtp) {
-        echo json_encode(["status" => "verified", "message" => "OTP verified."]);
+// === Step 2: Verify OTP ===
+if (!empty($username) && !empty($otp)) {
+    $stmt = $conn->prepare("SELECT otp FROM Users WHERE username = ?");
+    $stmt->bind_param("s", $username);
+    $stmt->execute();
+    $stmt->bind_result($storedOtp);
+    $stmt->fetch();
+
+    if ($otp == $storedOtp) {
+        echo json_encode(["status" => "otp_verified", "message" => "OTP verified. Proceed to reset password."]);
     } else {
-        echo json_encode(["status" => "error", "message" => "Invalid OTP."]);
+        echo json_encode(["status" => "error", "message" => "Incorrect OTP."]);
     }
-    $conn->close();
     exit();
 }
 
-// ✅ STEP 3: Reset Password
-if ($step == "reset_password" && !empty($username) && !empty($newPassword)) {
+// === Step 3: Reset Password ===
+if (!empty($username) && !empty($newPassword)) {
     $hashed = password_hash($newPassword, PASSWORD_DEFAULT);
-    $stmt = $conn->prepare("UPDATE Users SET password = ? WHERE username = ?");
+    $stmt = $conn->prepare("UPDATE Users SET password = ?, otp = NULL WHERE username = ?");
     $stmt->bind_param("ss", $hashed, $username);
     if ($stmt->execute()) {
-        echo json_encode(["status" => "success", "message" => "Password updated successfully."]);
+        echo json_encode(["status" => "success", "message" => "Password reset successfully."]);
     } else {
         echo json_encode(["status" => "error", "message" => "Failed to update password."]);
     }
-    $stmt->close();
-    $conn->close();
     exit();
 }
 
-// ✅ STEP 4: Login
-if ($step == "login" && !empty($username) && !empty($password)) {
+// === Step 4: Login ===
+if (!empty($username) && !empty($password)) {
     $stmt = $conn->prepare("SELECT password FROM Users WHERE username = ?");
     $stmt->bind_param("s", $username);
     $stmt->execute();
-    $stmt->store_result();
-
-    if ($stmt->num_rows > 0) {
-        $stmt->bind_result($hashed_password);
-        $stmt->fetch();
-
-        if (password_verify($password, $hashed_password)) {
-            echo json_encode(["status" => "success", "message" => "Login successful."]);
-        } else {
-            echo json_encode(["status" => "error", "message" => "Incorrect password."]);
-        }
+    $stmt->bind_result($hashedPassword);
+    if ($stmt->fetch() && password_verify($password, $hashedPassword)) {
+        echo json_encode(["status" => "success", "message" => "Login successful."]);
     } else {
-        echo json_encode(["status" => "error", "message" => "User not found."]);
+        echo json_encode(["status" => "error", "message" => "Invalid credentials."]);
     }
-
-    $stmt->close();
-    $conn->close();
     exit();
 }
 
-// ❌ Default
 echo json_encode(["status" => "error", "message" => "Invalid request."]);
 $conn->close();
-?>
